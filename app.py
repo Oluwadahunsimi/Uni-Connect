@@ -6,7 +6,6 @@ import io
 import base64
 from datetime import datetime
 import cv2
-from pyzbar.pyzbar import decode
 import numpy as np
 
 app = Flask(__name__)
@@ -240,65 +239,6 @@ def parent_dashboard():
         return redirect(url_for('home'))
     return render_template('parent_dashboard.html')
 
-@app.route('/generate_qr', methods=['GET', 'POST'])
-def generate_qr():
-    if 'user_id' not in session or session['role'] != 'Lecturer':
-        return redirect(url_for('home'))
-
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT id, course_name FROM courses WHERE lecturer_id = %s", [session['user_id']])
-    courses = cur.fetchall()
-    cur.close()
-
-    if request.method == 'POST':
-        course_id = request.form['course_id']
-        attendance_date = datetime.now().date()
-
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr_data = f"{course_id}_{attendance_date}"
-        qr.add_data(qr_data)
-        qr.make(fit=True)
-
-        img = qr.make_image(fill='black', back_color='white')
-        buf = io.BytesIO()
-        img.save(buf)
-        img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
-
-        return render_template('generate_qr.html', img_str=img_str, courses=courses)
-
-    return render_template('generate_qr.html', courses=courses)
-
-# Add webcam-based QR code scanning
-def scan_qr_code():
-    camera = cv2.VideoCapture(0)
-    while True:
-        success, frame = camera.read()
-        if not success:
-            break
-        else:
-            # Convert the frame to grayscale
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-            # Decode QR codes from the grayscale frame
-            decoded_objects = decode(gray)
-
-            for obj in decoded_objects:
-                # Extract the QR code data
-                data = obj.data.decode('utf-8')
-                return data  # Return the QR code data if found
-
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
-            break
-
-    camera.release()
-    cv2.destroyAllWindows()
-    return None
 
 @app.route('/mark_attendance_webcam', methods=['GET', 'POST'])
 def mark_attendance_webcam():
