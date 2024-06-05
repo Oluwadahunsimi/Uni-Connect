@@ -4,8 +4,7 @@ services:
     env: python
     region: oregon  # Change to your preferred region
     plan: free  # Change to your preferred plan
-    buildCommand: |
-      sudo apt-get update && sudo apt-get install -y libzbar0
+    buildCommand:
       pip install -r requirements.txt
     startCommand: "gunicorn app:app"
     envVars:
