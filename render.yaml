@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: flask-app
+    env: python
+    region: oregon  # Change to your preferred region
+    plan: free  # Change to your preferred plan
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: MYSQL_HOST
+        value: "localhost"
+      - key: MYSQL_USER
+        value: "root"
+      - key: MYSQL_PASSWORD
+        value: ""
+      - key: MYSQL_DB
+        value: "academic_support_system"
+      - key: FLASK_ENV
+        value: "production"
+      - key: SECRET_KEY
+        value: "your_secret_key"

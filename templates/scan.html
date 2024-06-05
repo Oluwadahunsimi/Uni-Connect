@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f2f2f2;
+        }
+
+        #qr-scanner {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        #video {
+            width: 100%;
+            height: auto;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        #scan-message {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #333333;
+        }
+
+        #scan-result {
+            font-size: 16px;
+            margin-bottom: 20px;
+            color: #0066cc;
+            word-wrap: break-word;
+        }
+
+        #scan-result-placeholder {
+            font-style: italic;
+            color: #999999;
+        }
+    </style>
+</head>
+<body>
+    <div id="qr-scanner">
+        <h1>QR Code Scanner</h1>
+        <video id="video" autoplay playsinline></video>
+        <p id="scan-message">Scan QR code with your camera</p>
+        <p id="scan-result">Scanning...</p>
+        <p id="scan-result-placeholder">(QR code data will appear here)</p>
+    </div>
+    <script src="https://rawgit.com/cozmo/jsQR/master/dist/jsQR.js"></script>
+    <script>
+        const video = document.getElementById('video');
+        const scanMessage = document.getElementById('scan-message');
+        const scanResult = document.getElementById('scan-result');
+        const scanResultPlaceholder = document.getElementById('scan-result-placeholder');
+
+        function onScanSuccess(decodedText) {
+            scanMessage.textContent = "QR code scanned successfully:";
+            scanResult.textContent = decodedText;
+            scanResultPlaceholder.style.display = "none";
+
+            // Send the decoded QR code data to the server
+            fetch('/qr_data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ data: decodedText }),
+            })
+            .then(response => response.json())
+            .then(data => console.log(data))
+            .catch(error => console.error('Error:', error));
+        }
+
+        function checkForQRCode() {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: 'dontInvert',
+            });
+
+            if (code) {
+                onScanSuccess(code.data);
+            }
+
+            requestAnimationFrame(checkForQRCode);
+        }
+
+        // Use the user's camera (environment facing for mobile and default camera for PC)
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } })
+            .then(function(stream) {
+                video.srcObject = stream;
+                video.play();
+                requestAnimationFrame(checkForQRCode);
+            })
+            .catch(function(err) {
+                console.error("Error accessing camera: ", err);
+                scanMessage.textContent = "Error accessing camera. Please ensure your camera is connected and accessible.";
+                scanResult.textContent = "";
+                scanResultPlaceholder.style.display = "none";
+            });
+    </script>
+</body>
+</html>
