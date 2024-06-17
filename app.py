@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_mysqldb import MySQL
 from werkzeug.security import generate_password_hash, check_password_hash
 import qrcode
@@ -6,32 +6,36 @@ import io
 import base64
 from datetime import datetime
 import cv2
-from pyzbar.pyzbar import decode
 import numpy as np
-import os
- 
-app = Flask(__name__) 
-app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key')
+import MySQLdb.cursors
+
+app = Flask(__name__)
+app.secret_key = 'your_secret_key'
 
 # Database configuration
-app.config['MYSQL_HOST'] = os.environ.get('MYSQL_HOST', 'localhost')
-app.config['MYSQL_USER'] = os.environ.get('MYSQL_USER', 'root')
-app.config['MYSQL_PASSWORD'] = os.environ.get('MYSQL_PASSWORD', '')
-app.config['MYSQL_DB'] = os.environ.get('MYSQL_DB', 'academic_support_system')
+app.config['MYSQL_HOST'] = 'localhost'
+app.config['MYSQL_USER'] = 'root'
+app.config['MYSQL_PASSWORD'] = 'Joe'
+app.config['MYSQL_DB'] = 'academic_support_system'
 app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 
-mysql = MySQL(app) 
+mysql = MySQL(app)
 
-# Create tables if they do not exist
+
 def create_tables():
     with app.app_context():
         cur = mysql.connection.cursor()
+     
+        
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usersss (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 email VARCHAR(255) NOT NULL,
                 password VARCHAR(255) NOT NULL,
-                role VARCHAR(100)
+                role VARCHAR(100),
+                name VARCHAR(255),
+                matric_no VARCHAR(50),
+                level VARCHAR(50)
             )
         """)
         
@@ -46,12 +50,13 @@ def create_tables():
         
         cur.execute("""
             CREATE TABLE IF NOT EXISTS appointments (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 student_id INT NOT NULL,
                 lecturer_id INT NOT NULL,
                 appointment_time DATETIME NOT NULL,
-                reason TEXT NOT NULL,
+                reason VARCHAR(255),
                 feedback TEXT,
+                PRIMARY KEY (id),
                 FOREIGN KEY (student_id) REFERENCES usersss(id),
                 FOREIGN KEY (lecturer_id) REFERENCES usersss(id)
             )
@@ -59,13 +64,22 @@ def create_tables():
         
         cur.execute("""
             CREATE TABLE IF NOT EXISTS notifications (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                appointment_id INT NOT NULL,
-                lecturer_id INT NOT NULL,
-                student_id INT NOT NULL,
-                FOREIGN KEY (appointment_id) REFERENCES appointments(id),
-                FOREIGN KEY (lecturer_id) REFERENCES usersss(id),
-                FOREIGN KEY (student_id) REFERENCES usersss(id)
+                 id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT 0,
+    appointment_id INT UNSIGNED NOT NULL,
+    lecturer_id INT NOT NULL,
+    student_id INT NOT NULL,
+    student_name VARCHAR(255),
+    student_matric_no VARCHAR(50),
+    student_level VARCHAR(50),
+    reason VARCHAR(255),
+    PRIMARY KEY (id),
+    FOREIGN KEY (user_id) REFERENCES usersss(id),
+    FOREIGN KEY (appointment_id) REFERENCES appointments(id),
+    FOREIGN KEY (lecturer_id) REFERENCES usersss(id),
+    FOREIGN KEY (student_id) REFERENCES usersss(id)
             )
         """)
         
@@ -86,6 +100,7 @@ def create_tables():
 
 create_tables()
 
+
 @app.route('/')
 def landing_page():
     if 'user_id' in session:
@@ -101,7 +116,7 @@ def signup():
     email = request.form['email']
     password = request.form['password']
     confirm_password = request.form['confirm_password']
-    role = request.form['role']
+    role = request.form['role']  # Get the role from the signup form
 
     if password == confirm_password:
         hashed_password = generate_password_hash(password)
@@ -159,22 +174,65 @@ def landing_after_login():
         return render_template('landing.html', user_abbr=user_abbr)
     else:
         return redirect(url_for('home'))
-
+    
+    
 @app.route('/notifications')
 def notifications():
     if 'user_id' not in session:
         return redirect(url_for('home'))
 
+    cur = mysql.connection.cursor()
+
     if session['role'] == 'Lecturer':
         lecturer_id = session['user_id']
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM appointments WHERE lecturer_id = %s AND feedback IS NULL", [lecturer_id])
-        appointments = cur.fetchall()
-        cur.close()
+        cur.execute("""
+            SELECT notifications.*, appointments.appointment_time,
+                   appointments.reason,
+                   usersss.email AS student_email, 
+                   usersss.name AS student_name, 
+                   usersss.matric_no AS student_matric_no, 
+                   usersss.level AS student_level
+            FROM notifications
+            JOIN appointments ON notifications.appointment_id = appointments.id
+            JOIN usersss ON appointments.student_id = usersss.id
+            WHERE notifications.lecturer_id = %s AND appointments.feedback IS NULL
+        """, [lecturer_id])
+    elif session['role'] == 'Student':
+        student_id = session['user_id']
+        cur.execute("""
+            SELECT notifications.*, appointments.appointment_time, 
+                   appointments.feedback,
+                   usersss.email AS lecturer_email
+            FROM notifications
+            JOIN appointments ON notifications.appointment_id = appointments.id
+            JOIN usersss ON appointments.lecturer_id = usersss.id
+            WHERE notifications.student_id = %s
+        """, [student_id])
 
-        return render_template('notifications.html', appointments=appointments)
-    else:
+    notifications = cur.fetchall()
+    cur.close()
+
+    return render_template('notifications.html', notifications=notifications)
+
+
+
+
+@app.route('/send_feedback', methods=['POST'])
+def send_feedback():
+    if 'user_id' not in session or session['role'] != 'Lecturer':
         return redirect(url_for('home'))
+
+    feedback = request.form['feedback']
+    appointment_id = request.form['appointment_id']
+
+    cur = mysql.connection.cursor()
+    cur.execute("UPDATE appointments SET feedback = %s WHERE id = %s AND lecturer_id = %s",
+                (feedback, appointment_id, session['user_id']))
+    mysql.connection.commit()
+    cur.close()
+
+    flash("Feedback sent successfully.")
+    return redirect(url_for('notifications'))
 
 @app.route('/appointments', methods=['GET', 'POST'])
 def appointments():
@@ -191,99 +249,298 @@ def appointments():
         appointment_time = request.form['appointment_time']
         reason = request.form['reason']
 
+        # Verify lecturer_id exists
+        cur.execute("SELECT id FROM usersss WHERE id = %s AND role = 'Lecturer'", (lecturer_id,))
+        lecturer = cur.fetchone()
+        if not lecturer:
+            flash("Selected lecturer does not exist.")
+            return redirect(url_for('appointments'))
+
         cur.execute("INSERT INTO appointments (student_id, lecturer_id, appointment_time, reason) VALUES (%s, %s, %s, %s)",
                     (student_id, lecturer_id, appointment_time, reason))
+        
         mysql.connection.commit()
         appointment_id = cur.lastrowid
 
-        cur.execute("INSERT INTO notifications (appointment_id, lecturer_id, student_id) VALUES (%s, %s, %s)",
-                    (appointment_id, lecturer_id, student_id))
-        mysql.connection.commit()
-        cur.close()
+        # Get student details
+        cur.execute("SELECT name, matric_no, level FROM usersss WHERE id = %s", (student_id,))
+        student = cur.fetchone()
+        if not student:
+            flash("Student details could not be found.")
+            return redirect(url_for('appointments'))
 
-        flash("Appointment scheduled successfully.")
+        student_name = student['name']
+        student_matric_no = student['matric_no']
+        student_level = student['level']
+
+        # Notify the respective lecturer
+        cur.execute("""
+            INSERT INTO notifications (user_id, reason, appointment_id, lecturer_id, student_id, student_name, student_matric_no, student_level) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (lecturer_id, reason, appointment_id, lecturer_id, student_id, student_name, student_matric_no, student_level))
+        
+        mysql.connection.commit()
+
+        flash("Appointment booked successfully.")
         return redirect(url_for('appointments'))
 
-    return render_template('appointments.html', lecturers=lecturers)
+    cur.execute("SELECT appointments.*, usersss.email AS lecturer_email FROM appointments JOIN usersss ON appointments.lecturer_id = usersss.id WHERE student_id = %s", [session['user_id']])
+    appointments = cur.fetchall()
+    cur.close()
 
-@app.route('/appointments/feedback/<int:appointment_id>', methods=['POST'])
-def provide_feedback(appointment_id):
+    return render_template('appoint.html', lecturers=lecturers, appointments=appointments)
+
+
+
+@app.route('/generate_qr', methods=['GET', 'POST'])
+def generate_qr():
     if 'user_id' not in session or session['role'] != 'Lecturer':
         return redirect(url_for('home'))
 
-    feedback = request.form['feedback']
+    if request.method == 'POST':
+        course_id = request.form['course_id']
+        course_name = request.form['course_name']
+        lecturer_id = session['user_id']
+        date = request.form['date']
+
+        qr_data = f"{course_id},{course_name},{lecturer_id},{date}"
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        img = qr.make_image(fill='black', back_color='white')
+
+        buf = io.BytesIO()
+        img.save(buf)
+        img_base64 = base64.b64encode(buf.getvalue()).decode()
+
+        return render_template('generate_qr_code.html', qr_code=img_base64)
+
     cur = mysql.connection.cursor()
-    cur.execute("UPDATE appointments SET feedback = %s WHERE id = %s", (feedback, appointment_id))
+    cur.execute("SELECT id, course_name FROM courses WHERE lecturer_id = %s", [session['user_id']])
+    courses = cur.fetchall()
+    cur.close()
+
+    return render_template('generate_qr_code.html', courses=courses)
+
+@app.route('/scan_qr', methods=['GET', 'POST'])
+def scan_qr():
+    if 'user_id' not in session or session['role'] != 'Student':
+        return redirect(url_for('home'))
+
+    if request.method == 'POST':
+        file = request.files['qr_code']
+        if file:
+            file_bytes = np.frombuffer(file.read(), np.uint8)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+
+            detector = cv2.QRCodeDetector()
+            data, bbox, _ = detector.detectAndDecode(img)
+
+            if data:
+                course_id, course_name, lecturer_id, date = data.split(',')
+                student_id = session['user_id']
+
+                cur = mysql.connection.cursor()
+                cur.execute("""
+                    INSERT INTO attendance (student_id, course_id, attendance_date, present) 
+                    VALUES (%s, %s, %s, 1)
+                """, (student_id, course_id, date))
+                mysql.connection.commit()
+                cur.close()
+
+                flash(f"Attendance for {course_name} on {date} marked successfully.")
+                return redirect(url_for('student_dashboard'))
+            else:
+                flash("Invalid QR Code. Please try again.")
+                return redirect(url_for('scan_qr'))
+
+    return render_template('scan.html')
+
+@app.route('/add_courses')
+def add_courses():
+    if 'user_id' not in session or session['role'] != 'Lecturer':
+        return redirect(url_for('home'))
+
+    lecturer_id = session['user_id']
+    courses = ['CMP 4', 'CMP 407', 'CMP 314']
+
+    cur = mysql.connection.cursor()
+    for course_name in courses:
+        cur.execute("INSERT INTO courses (course_name, lecturer_id) VALUES (%s, %s)", (course_name, lecturer_id))
     mysql.connection.commit()
     cur.close()
 
-    flash("Feedback provided successfully.")
-    return redirect(url_for('notifications'))
+    return "Courses added successfully!"
 
-@app.route('/qr-code/<data>')
-def generate_qr(data):
-    img = qrcode.make(data)
-    buf = io.BytesIO()
-    img.save(buf)
-    buf.seek(0)
-    img_bytes = buf.getvalue()
-    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
 
-    return jsonify({"qr_code": img_b64})
+def scan_qr_code():
+    camera = cv2.VideoCapture(0)
+    qr_detector = cv2.QRCodeDetector()
 
-@app.route('/scan-qr', methods=['POST'])
-def scan_qr():
-    if 'user_id' not in session or session['role'] != 'Lecturer':
+    while True:
+        success, frame = camera.read()
+        if not success:
+            break
+        else:
+            # Detect and decode the QR code
+            data, bbox, _ = qr_detector.detectAndDecode(frame)
+
+            if data:
+                camera.release()
+                cv2.destroyAllWindows()
+                return data  # Return the QR code data if found
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            break
+
+    camera.release()
+    cv2.destroyAllWindows()
+    return None
+
+@app.route('/mark_attendance_webcam', methods=['GET', 'POST'])
+def mark_attendance_webcam():
+    if 'user_id' not in session or session['role'] != 'Student':
         return redirect(url_for('home'))
 
-    file = request.files['qr_code']
-    np_img = np.fromstring(file.read(), np.uint8)
-    img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
-    barcodes = decode(img)
-    results = []
+    if request.method == 'POST':
+        qr_data = scan_qr_code()
 
-    for barcode in barcodes:
-        barcode_data = barcode.data.decode('utf-8')
-        results.append(barcode_data)
+        if qr_data:
+            try:
+                course_id, attendance_date = qr_data.split('_', 1)
+                attendance_date = datetime.strptime(attendance_date, '%Y-%m-%d').date()
+            except ValueError:
+                flash("Invalid attendance date format.")
+                return redirect(url_for('student_dashboard'))
 
-    return jsonify({"results": results})
+            student_id = session['user_id']
+            cur = mysql.connection.cursor()
+            cur.execute("SELECT * FROM attendance WHERE student_id = %s AND course_id = %s AND attendance_date = %s",
+                        (student_id, course_id, attendance_date))
+            attendance_record = cur.fetchone()
+
+            if not attendance_record:
+                cur.execute("INSERT INTO attendance (student_id, course_id, attendance_date, present, mark) VALUES (%s, %s, %s, 1, 0.5)",
+                            (student_id, course_id, attendance_date))
+            else:
+                cur.execute("UPDATE attendance SET present = 1, mark = 0.5 WHERE id = %s", [attendance_record['id']])
+
+            mysql.connection.commit()
+            cur.close()
+
+            flash("Attendance marked successfully.")
+            return redirect(url_for('student_dashboard'))
+        else:
+            flash("No QR code detected. Please try again.")
+            return redirect(url_for('student_dashboard'))
+
+    return render_template('scan.html')
 
 @app.route('/mark_attendance', methods=['POST'])
 def mark_attendance():
-    if 'user_id' not in session or session['role'] != 'Lecturer':
+    if 'user_id' not in session or session['role'] != 'Student':
         return redirect(url_for('home'))
-
-    student_id = request.form['student_id']
-    course_id = request.form['course_id']
-    attendance_date = request.form['date']
-    present = int(request.form['present'])
-    mark = float(request.form['mark'])
-
-    cur = mysql.connection.cursor()
-    cur.execute("INSERT INTO attendance (student_id, course_id, attendance_date, present, mark) VALUES (%s, %s, %s, %s, %s)",
-                (student_id, course_id, attendance_date, present, mark))
-    mysql.connection.commit()
-    cur.close()
 
     flash("Attendance marked successfully.")
-    return redirect(url_for('lecturer_dashboard'))
+    return redirect(url_for('scan'))
 
-@app.route('/view_attendance/<int:course_id>')
-def view_attendance(course_id):
-    if 'user_id' not in session or session['role'] != 'Lecturer':
+@app.route('/scan')
+def scan():
+    return render_template('scan.html')
+
+def notify_absentees():
+    with app.app_context():
+        cur = mysql.connection.cursor()
+        attendance_date = datetime.now().date()
+
+        cur.execute("""
+            SELECT usersss.id, usersss.email, usersss.role, courses.course_name
+            FROM usersss
+            JOIN attendance ON usersss.id = attendance.student_id
+            JOIN courses ON attendance.course_id = courses.id
+            WHERE attendance.present = 0 AND attendance.attendance_date = %s
+        """, [attendance_date])
+        absentees = cur.fetchall()
+
+        for absentee in absentees:
+            lecturer_email = get_lecturer_email(absentee['course_id'])
+            parent_email = get_parent_email(absentee['id'])
+            send_email(lecturer_email, "Student Absence Notification", f"Student {absentee['email']} missed the class for {absentee['course_name']} on {attendance_date}")
+            send_email(parent_email, "Student Absence Notification", f"Your child {absentee['email']} missed the class for {absentee['course_name']} on {attendance_date}")
+
+        cur.close()
+
+def get_lecturer_email(course_id):
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT usersss.email FROM usersss JOIN courses ON usersss.id = courses.lecturer_id WHERE courses.id = %s", [course_id])
+    lecturer = cur.fetchone()
+    cur.close()
+    return lecturer['email'] if lecturer else None
+
+def get_parent_email(student_id):
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT email FROM usersss WHERE role = 'Parent' AND id = %s", [student_id])
+    parent = cur.fetchone()
+    cur.close()
+    return parent['email'] if parent else None
+
+def send_email(to, subject, body):
+    print(f"Sending email to {to} with subject {subject} and body {body}")
+
+@app.route('/view_attendance')
+def view_attendance():
+    if 'user_id' not in session:
         return redirect(url_for('home'))
 
-    cur = mysql.connection.cursor() 
-    cur.execute("""
-        SELECT a.*, u.email AS student_email
-        FROM attendance a
-        JOIN usersss u ON a.student_id = u.id
-        WHERE a.course_id = %s
-    """, [course_id])
+    cur = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+    if session['role'] == 'Lecturer':
+        lecturer_id = session['user_id']
+        cur.execute("""
+            SELECT usersss.name AS student_name, usersss.matric_no, courses.course_name, attendance.attendance_date, attendance.present
+            FROM attendance
+            JOIN usersss ON attendance.student_id = usersss.id
+            JOIN courses ON attendance.course_id = courses.id
+            WHERE courses.lecturer_id = %s
+        """, [lecturer_id])
+    elif session['role'] == 'Student':
+        student_id = session['user_id']
+        cur.execute("""
+            SELECT usersss.name AS student_name, usersss.matric_no, courses.course_name, attendance.attendance_date, attendance.present
+            FROM attendance
+            JOIN usersss ON attendance.student_id = usersss.id
+            JOIN courses ON attendance.course_id = courses.id
+            WHERE attendance.student_id = %s
+        """, [student_id])
+
     attendance_records = cur.fetchall()
     cur.close()
-                       
+
     return render_template('view_attendance.html', attendance_records=attendance_records)
 
+@app.route('/student_dashboard')
+def student_dashboard():
+    if 'user_id' not in session or session['role'] != 'Student':
+        return redirect(url_for('home'))
+    return render_template('landing2.html',user_abbr=session.get('user_abbr'))
+
+@app.route('/lecturer_dashboard')
+def lecturer_dashboard():
+    if 'user_id' not in session or session['role'] != 'Lecturer':
+        return redirect(url_for('home'))
+    return render_template('parent.html',user_abbr=session.get('user_abbr'))
+
+@app.route('/parent_dashboard')
+def parent_dashboard():
+    if 'user_id' not in session or session['role'] != 'Parent':
+        return redirect(url_for('home'))
+    return render_template('parent_dashboard.html')
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+    app.run(debug=True)
