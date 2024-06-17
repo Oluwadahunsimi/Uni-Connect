@@ -9,7 +9,7 @@ services:
     startCommand: "gunicorn app:app"
     envVars:
       - key: MYSQL_HOST
-        value: "localhost"
+        value: "'http://127.0.0.1:5002"
       - key: MYSQL_USER
         value: "root"
       - key: MYSQL_PASSWORD
