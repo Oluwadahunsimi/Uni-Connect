@@ -15,7 +15,7 @@ app.secret_key = 'your_secret_key'
 # Database configuration
 app.config['MYSQL_HOST'] = '127.0.0.1'
 app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'Joe'
+app.config['MYSQL_PASSWORD'] = ''
 app.config['MYSQL_DB'] = 'academic_support_system'
 app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 
