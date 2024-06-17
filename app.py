@@ -13,7 +13,7 @@ app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 
 # Database configuration
-app.config['MYSQL_HOST'] = 'http://127.0.0.1:5002'
+app.config['MYSQL_HOST'] = '127.0.0.1'
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'Joe'
 app.config['MYSQL_DB'] = 'academic_support_system'
@@ -101,6 +101,17 @@ def landing_page():
     if 'user_id' in session:
         return redirect(url_for('landing_after_login'))
     return render_template('landing.html')
+ 
+@app.route('/')
+def index():
+    cur = mysql.connection.cursor()
+    cur.execute('''SELECT VERSION()''')
+    rv = cur.fetchall()
+    return str(rv)   
+    
+    
+
+
 
 @app.route('/home')
 def home():
