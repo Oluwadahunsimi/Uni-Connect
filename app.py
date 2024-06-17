@@ -13,7 +13,7 @@ app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 
 # Database configuration
-app.config['MYSQL_HOST'] = 'localhost'
+app.config['MYSQL_HOST'] = 'http://127.0.0.1:5002'
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'Joe'
 app.config['MYSQL_DB'] = 'academic_support_system'
@@ -21,12 +21,10 @@ app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 
 mysql = MySQL(app)
 
-
 def create_tables():
     with app.app_context():
         cur = mysql.connection.cursor()
-     
-        
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS usersss (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -38,7 +36,7 @@ def create_tables():
                 level VARCHAR(50)
             )
         """)
-        
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS courses (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -47,7 +45,7 @@ def create_tables():
                 FOREIGN KEY (lecturer_id) REFERENCES usersss(id)
             )
         """)
-        
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS appointments (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -61,28 +59,28 @@ def create_tables():
                 FOREIGN KEY (lecturer_id) REFERENCES usersss(id)
             )
         """)
-        
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS notifications (
-                 id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    message TEXT NOT NULL,
-    is_read BOOLEAN DEFAULT 0,
-    appointment_id INT UNSIGNED NOT NULL,
-    lecturer_id INT NOT NULL,
-    student_id INT NOT NULL,
-    student_name VARCHAR(255),
-    student_matric_no VARCHAR(50),
-    student_level VARCHAR(50),
-    reason VARCHAR(255),
-    PRIMARY KEY (id),
-    FOREIGN KEY (user_id) REFERENCES usersss(id),
-    FOREIGN KEY (appointment_id) REFERENCES appointments(id),
-    FOREIGN KEY (lecturer_id) REFERENCES usersss(id),
-    FOREIGN KEY (student_id) REFERENCES usersss(id)
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                user_id INT NOT NULL,
+                message TEXT NOT NULL,
+                is_read BOOLEAN DEFAULT 0,
+                appointment_id INT UNSIGNED NOT NULL,
+                lecturer_id INT NOT NULL,
+                student_id INT NOT NULL,
+                student_name VARCHAR(255),
+                student_matric_no VARCHAR(50),
+                student_level VARCHAR(50),
+                reason VARCHAR(255),
+                PRIMARY KEY (id),
+                FOREIGN KEY (user_id) REFERENCES usersss(id),
+                FOREIGN KEY (appointment_id) REFERENCES appointments(id),
+                FOREIGN KEY (lecturer_id) REFERENCES usersss(id),
+                FOREIGN KEY (student_id) REFERENCES usersss(id)
             )
         """)
-        
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS attendance (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -95,12 +93,9 @@ def create_tables():
                 FOREIGN KEY (course_id) REFERENCES courses(id)
             )
         """)
+
         mysql.connection.commit()
         cur.close()
-
-create_tables()
-
-
 @app.route('/')
 def landing_page():
     if 'user_id' in session:
@@ -174,8 +169,8 @@ def landing_after_login():
         return render_template('landing.html', user_abbr=user_abbr)
     else:
         return redirect(url_for('home'))
-    
-    
+
+
 @app.route('/notifications')
 def notifications():
     if 'user_id' not in session:
@@ -188,9 +183,9 @@ def notifications():
         cur.execute("""
             SELECT notifications.*, appointments.appointment_time,
                    appointments.reason,
-                   usersss.email AS student_email, 
-                   usersss.name AS student_name, 
-                   usersss.matric_no AS student_matric_no, 
+                   usersss.email AS student_email,
+                   usersss.name AS student_name,
+                   usersss.matric_no AS student_matric_no,
                    usersss.level AS student_level
             FROM notifications
             JOIN appointments ON notifications.appointment_id = appointments.id
@@ -200,7 +195,7 @@ def notifications():
     elif session['role'] == 'Student':
         student_id = session['user_id']
         cur.execute("""
-            SELECT notifications.*, appointments.appointment_time, 
+            SELECT notifications.*, appointments.appointment_time,
                    appointments.feedback,
                    usersss.email AS lecturer_email
             FROM notifications
@@ -258,7 +253,7 @@ def appointments():
 
         cur.execute("INSERT INTO appointments (student_id, lecturer_id, appointment_time, reason) VALUES (%s, %s, %s, %s)",
                     (student_id, lecturer_id, appointment_time, reason))
-        
+
         mysql.connection.commit()
         appointment_id = cur.lastrowid
 
@@ -275,10 +270,10 @@ def appointments():
 
         # Notify the respective lecturer
         cur.execute("""
-            INSERT INTO notifications (user_id, reason, appointment_id, lecturer_id, student_id, student_name, student_matric_no, student_level) 
+            INSERT INTO notifications (user_id, reason, appointment_id, lecturer_id, student_id, student_name, student_matric_no, student_level)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (lecturer_id, reason, appointment_id, lecturer_id, student_id, student_name, student_matric_no, student_level))
-        
+
         mysql.connection.commit()
 
         flash("Appointment booked successfully.")
@@ -347,7 +342,7 @@ def scan_qr():
 
                 cur = mysql.connection.cursor()
                 cur.execute("""
-                    INSERT INTO attendance (student_id, course_id, attendance_date, present) 
+                    INSERT INTO attendance (student_id, course_id, attendance_date, present)
                     VALUES (%s, %s, %s, 1)
                 """, (student_id, course_id, date))
                 mysql.connection.commit()
@@ -543,4 +538,4 @@ def parent_dashboard():
     return render_template('parent_dashboard.html')
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5002)
