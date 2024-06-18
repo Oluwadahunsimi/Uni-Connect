@@ -283,15 +283,15 @@ def get_attendance():
 
 @app.route('/student_dashboard')
 def student_dashboard():
-    return render_template('landing2.html')
+    return render_template('landing2.html',user_abbr=session.get('user_abbr'))
 
 @app.route('/lecturer_dashboard')
 def lecturer_dashboard():
-    return render_template('parent.html')
+    return render_template('parent.html',user_abbr=session.get('user_abbr'))
 
 @app.route('/parent_dashboard')
 def parent_dashboard():
-    return render_template('parent_dashboard.html')
+    return render_template('parent_dashboard.html',user_abbr=session.get('user_abbr'))
 
 if __name__ == '__main__':
     app.run(debug=True)
