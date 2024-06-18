@@ -11,10 +11,16 @@ import numpy as np
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 
-# Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:@localhost:3306/academic_support_system'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# MySQL Configuration
+DB_USERNAME = 'root'
+DB_PASSWORD = 'your_password'
+DB_HOST = '127.0.0.1'
+DB_PORT = 3306
+DB_NAME = 'academic_support_system'
 
+# Database URI
+app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 # Define your models
