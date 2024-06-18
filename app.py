@@ -14,7 +14,7 @@ app.secret_key = 'your_secret_key'
 # MySQL Configuration
 DB_USERNAME = 'root'
 DB_PASSWORD = 'your_password'
-DB_HOST = '127.0.0.1'
+DB_HOST = 'localhost'
 DB_PORT = 3306
 DB_NAME = 'academic_support_system'
 
